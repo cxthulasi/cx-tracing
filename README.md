@@ -100,30 +100,6 @@ The application uses `.env` files for configuration:
 | `NODE_ENV` | `production` | Node.js environment |
 | `LOG_LEVEL` | `info` | Logging level |
 
-## Coralogix Integration
-
-To send traces to Coralogix:
-
-1. **Update `otel-collector-config.yaml`:**
-   ```yaml
-   exporters:
-     otlp/coralogix:
-       endpoint: "https://ingress.coralogix.com:443"
-       headers:
-         Authorization: "Bearer YOUR_CORALOGIX_PRIVATE_KEY"
-   
-   service:
-     pipelines:
-       traces:
-         exporters: [jaeger, otlp/coralogix, logging]
-   ```
-
-2. **Replace `YOUR_CORALOGIX_PRIVATE_KEY` with your actual private key**
-
-3. **Restart the collector:**
-   ```bash
-   docker-compose restart otel-collector
-   ```
 
 ## API Endpoints
 
