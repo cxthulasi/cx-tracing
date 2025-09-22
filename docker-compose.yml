@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8889:8889"   # Prometheus metrics
+    depends_on:
+      - jaeger
+
+  # Jaeger for trace visualization (optional)
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14250:14250"  # Jaeger gRPC
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
+  # Node.js Service A
+  service-a:
+    build: .
+    ports:
+      - "${SERVICE_A_PORT:-3000}:${SERVICE_A_PORT:-3000}"
+    env_file:
+      - .env
+    environment:
+      - SERVICE_NAME=service-a
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=nodejs-service-a
+    depends_on:
+      - otel-collector
+      - service-b
+      - service-c
+
+  # Node.js Service B
+  service-b:
+    build: .
+    ports:
+      - "${SERVICE_B_PORT:-3001}:${SERVICE_B_PORT:-3001}"
+    env_file:
+      - .env
+    environment:
+      - SERVICE_NAME=service-b
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=nodejs-service-b
+    depends_on:
+      - otel-collector
+      - service-c
+
+  # Node.js Service C
+  service-c:
+    build: .
+    ports:
+      - "${SERVICE_C_PORT:-3002}:${SERVICE_C_PORT:-3002}"
+    env_file:
+      - .env
+    environment:
+      - SERVICE_NAME=service-c
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=nodejs-service-c
+    depends_on:
+      - otel-collector
