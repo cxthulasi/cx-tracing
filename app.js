@@ -12,10 +12,12 @@ const sdk = new NodeSDK({
     [SemanticResourceAttributes.SERVICE_VERSION]: '1.0.0',
   }),
   traceExporter: new OTLPTraceExporter({
-    url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4317',
-    headers: {
-    Authorization: 'Bearer cxtp_Qd7ke2dhCmpybJuGZxBn5EYeuXUjlT',
-  },
+    url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4317'
+
+  //   url: 'https://ingress.{YOUR_CORALOGIX_REGION}.coralogix.com:443',
+  //   headers: {
+  //   Authorization: 'Bearer YOUR_CORALOGIX_PRIVATE_KEY',
+  // },
   }),
   instrumentations: [getNodeAutoInstrumentations()],
 });

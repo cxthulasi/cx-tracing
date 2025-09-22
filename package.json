@@ -5,7 +5,11 @@
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "dev": "nodemon app.js"
+    "dev": "nodemon app.js",
+    "serviceA": "dotenv -e .env.service-a -- npm start",
+    "serviceB": "dotenv -e .env.service-b -- npm start",
+    "serviceC": "dotenv -e .env.service-c -- npm start",
+    "start:all": "concurrently \"npm run serviceA\" \"npm run serviceB\" \"npm run serviceC\""
   },
   "dependencies": {
     "@opentelemetry/api": "^1.7.0",
@@ -19,6 +23,7 @@
     "winston": "^3.11.0"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "dotenv-cli": "^10.0.0",
     "nodemon": "^3.0.1"
   },

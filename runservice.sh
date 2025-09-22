@@ -8,7 +8,16 @@ git clone https://github.com/cxthulasi/cx-tracing.git &&
 
 cd cx-tracing
 
+export OTEL_TRACES_EXPORTER="otlp"
+export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"
+export OTEL_EXPORTER_OTLP_COMPRESSION="gzip"
+export OTEL_RESOURCE_ATTRIBUTES="cx.application.name=sampleapp, cx.subsystem.name=samplesubapp, service.namespace=samplens"
+export OTEL_NODE_RESOURCE_DETECTORS="all"
+export OTEL_SERVICE_NAME="YourAppServiceName"
+chmod +x runservice.sh testtraces.sh &&
 
 npm install &&
 
 npm start
+
+
