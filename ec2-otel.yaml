@@ -121,6 +121,8 @@ Resources:
           sudo yum install npm git -y
           systemctl enable --now amazon-ssm-agent
 
+          
+
           # Export Coralogix env to service (systemd drop-in)
           mkdir -p /etc/systemd/system/otelcol-contrib.service.d
           cat > /etc/systemd/system/otelcol-contrib.service.d/override.conf <<'OVR'
@@ -273,15 +275,25 @@ Resources:
           systemctl enable otelcol-contrib
           systemctl restart otelcol-contrib || true
           systemctl status --no-pager otelcol-contrib || true
-          echo "================ OTEL INSTALL COMPLETE ================"
-          journalctl -u otelcol-contrib -n 50 --no-pager || true
-          echo "================ END ================"
+          # echo "================ OTEL INSTALL COMPLETE ================"
+          # journalctl -u otelcol-contrib -n 50 --no-pager || true
+          # echo "================ END ================"
 
           #setting up the sample Application
-           git clone https://github.com/cxthulasi/cx-tracing.git &&
-           cd cx-tracing &&
-           npm install &&
-           npm start
+          cd /home/ec2-user
+          git clone https://github.com/cxthulasi/cx-tracing.git 
+          cd cx-tracing 
+          npm install
+          # cat >> ~/.bashrc <<'EOT'
+          # # OpenTelemetry Configuration
+          # export OTEL_TRACES_EXPORTER="otlp"
+          # export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"
+          # export OTEL_EXPORTER_OTLP_COMPRESSION="gzip"
+          # export OTEL_RESOURCE_ATTRIBUTES="cx.application.name=nodejsapp, cx.subsystem.name=nodejssubapp"
+          # export OTEL_NODE_RESOURCE_DETECTORS="all"
+          # EOT
+          # source ~/.bashrc
+         
 
   InstanceRole:
     Type: AWS::IAM::Role

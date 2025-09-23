@@ -5,7 +5,7 @@
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "dev": "nodemon app.js",
+    // "dev": "nodemon app.js",
     "serviceA": "dotenv -e .env.service-a -- npm start",
     "serviceB": "dotenv -e .env.service-b -- npm start",
     "serviceC": "dotenv -e .env.service-c -- npm start",
