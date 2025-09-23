@@ -14,7 +14,7 @@ const sdk = new NodeSDK({
   traceExporter: new OTLPTraceExporter({
     url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4317'
 
-  //   url: 'https://ingress.{YOUR_CORALOGIX_REGION}.coralogix.com:443',
+  //   url: 'https://ingress.ap1.coralogix.com:443/v1/traces',
   //   headers: {
   //   Authorization: 'Bearer YOUR_CORALOGIX_PRIVATE_KEY',
   // },

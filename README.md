@@ -161,3 +161,10 @@ for i in {1..20}; do curl http://localhost:3000/api/users; echo; done
 3. **Missing trace correlation**: Verify OpenTelemetry SDK initialization
 4. **Docker issues**: Run `docker-compose down -v` and `docker-compose up --build`
 5. **Node.js version**: Ensure Node.js 16+ is installed
+
+
+
+export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"
+export OTEL_EXPORTER_OTLP_COMPRESSION="gzip"
+export OTEL_RESOURCE_ATTRIBUTES="cx.application.name=AppName, cx.subsystem.name=SubName"
+export OTEL_NODE_RESOURCE_DETECTORS="all"
