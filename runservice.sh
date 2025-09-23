@@ -13,7 +13,7 @@ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"
 export OTEL_EXPORTER_OTLP_COMPRESSION="gzip"
 export OTEL_RESOURCE_ATTRIBUTES="cx.application.name=sampleapp, cx.subsystem.name=samplesubapp, service.namespace=samplens"
 export OTEL_NODE_RESOURCE_DETECTORS="all"
-export OTEL_SERVICE_NAME="YourAppServiceName"
+
 chmod +x runservice.sh testtraces.sh &&
 
 npm install &&

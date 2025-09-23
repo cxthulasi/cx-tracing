@@ -312,7 +312,7 @@ Resources:
     Type: AWS::IAM::InstanceProfile
     Properties:
       Roles: [!Ref InstanceRole]
-      InstanceProfileName: !Sub "${AWS::StackName}-instance-profile"
+      InstanceProfileName: !Sub "${AWS::StackName}-new-instance-profile"
 
 Outputs:
   InstanceId:

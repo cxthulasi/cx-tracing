@@ -23,12 +23,7 @@ The application consists of three services:
 
 ### Option 1: Docker Compose (Recommended)
 
-1. **Start all services:**
-   ```bash
-   docker-compose up --build
-   ```
-
-2. **Test the application:**
+1. **Test the application:**
    ```bash
    # Generate traces with different outcomes
    curl http://localhost:3000/api/users
@@ -46,15 +41,8 @@ The application consists of three services:
    npm install
    ```
 
-2. **Start OTEL Collector:**
-   ```bash
-   docker run -p 4317:4317 -p 4318:4318 \
-     -v $(pwd)/otel-collector-config.yaml:/etc/otel-collector-config.yaml \
-     otel/opentelemetry-collector-contrib:latest \
-     --config=/etc/otel-collector-config.yaml
-   ```
 
-3. **Start services in separate terminals using .env files:**
+2. **Start services in separate terminals using .env files:**
    ```bash
    # Terminal 1 - Service A
    npx dotenv -e .env.service-a npm start
@@ -164,7 +152,3 @@ for i in {1..20}; do curl http://localhost:3000/api/users; echo; done
 
 
 
-export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"
-export OTEL_EXPORTER_OTLP_COMPRESSION="gzip"
-export OTEL_RESOURCE_ATTRIBUTES="cx.application.name=AppName, cx.subsystem.name=SubName"
-export OTEL_NODE_RESOURCE_DETECTORS="all"
