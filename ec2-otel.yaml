@@ -1,0 +1,320 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: EC2 in a new VPC/public subnet with only HTTP/HTTPS access; installs OTEL Collector; SSM Session Manager ready
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues: [t3.micro, t3.small, t3.medium, t2.micro, t2.small, t2.medium]
+    Description: EC2 instance type
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR for the VPC
+  PublicSubnetCidr:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: CIDR for the public subnet
+  CoralogixDomain:
+    Type: String
+    Default: coralogix.in
+    Description: Coralogix domain (e.g., coralogix.in, coralogix.com)
+  CoralogixPrivateKey:
+    Type: String
+    NoEcho: true
+    Description: Coralogix private key (hidden in CloudFormation)
+  CoralogixApp:
+    Type: String
+    Default: ec2oteltraces
+    Description: Application name for Coralogix
+  CoralogixSubsystem:
+    Type: String
+    Default: ec2-subsystem
+    Description: Subsystem name for Coralogix
+  AL2023AmiParameter:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Latest Amazon Linux 2023 AMI ID (x86_64)
+  OTELVersion:
+    Type: String
+    Default: 0.135.0
+    Description: OpenTelemetry Collector Contrib version
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{ Key: Name, Value: otel-vpc }]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags: [{ Key: Name, Value: otel-igw }]
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnetCidr
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags: [{ Key: Name, Value: otel-public-subnet }]
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags: [{ Key: Name, Value: otel-public-rt }]
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow only HTTP/HTTPS inbound; all outbound
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80,  ToPort: 80,  CidrIp: 0.0.0.0/0, Description: Allow HTTP }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: Allow HTTPS }
+      SecurityGroupEgress:
+        - { IpProtocol: -1, FromPort: 0, ToPort: 0, CidrIp: 0.0.0.0/0, Description: Allow all outbound }
+      Tags: [{ Key: Name, Value: otel-sg }]
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AL2023AmiParameter
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds: [!Ref InstanceSecurityGroup]
+      IamInstanceProfile: !Ref InstanceProfile
+      Tags: [{ Key: Name, Value: otel-ec2 }]
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+
+          # --- Ensure SSM Agent is present and running (Session Manager) ---
+          dnf update -y
+          dnf install -y amazon-ssm-agent wget systemd curl tar || true
+          sudo yum install npm git -y
+          systemctl enable --now amazon-ssm-agent
+
+          # Export Coralogix env to service (systemd drop-in)
+          mkdir -p /etc/systemd/system/otelcol-contrib.service.d
+          cat > /etc/systemd/system/otelcol-contrib.service.d/override.conf <<'OVR'
+          [Service]
+          Environment="CORALOGIX_DOMAIN=${CoralogixDomain}"
+          Environment="CORALOGIX_PRIVATE_KEY=${CoralogixPrivateKey}"
+          Environment="CORALOGIX_APP=${CoralogixApp}"
+          Environment="CORALOGIX_SUBSYSTEM=${CoralogixSubsystem}"
+          OVR
+          systemctl daemon-reload
+          sudo mkdir -p /var/log/otelcol
+
+          # Install OpenTelemetry Collector Contrib (RPM suits AL2023)
+          rpm_url="https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${OTELVersion}/otelcol-contrib_${OTELVersion}_linux_amd64.rpm"
+          curl -L -o /tmp/otelcol-contrib.rpm "$rpm_url"
+          rpm -Uvh /tmp/otelcol-contrib.rpm
+
+          # Write config; use ${!env:VAR} so Fn::Sub doesn't touch them, but otel resolves them
+          cat >/etc/otelcol-contrib/config.yaml <<'EOF'
+          receivers:
+            otlp:
+              protocols:
+                grpc: { endpoint: 0.0.0.0:4317 }
+                http: { endpoint: 0.0.0.0:4318 }
+            filelog:
+              force_flush_period: 0
+              include:
+              - /var/log/syslog
+              - /var/log/*.log
+              include_file_name: true
+              include_file_path: false
+              retry_on_failure:
+                enabled: true
+              start_at: beginning
+            hostmetrics:
+              root_path: /
+              collection_interval: 10s
+              scrapers:
+                cpu: { metrics: { system.cpu.utilization: { enabled: true } } }
+                filesystem:
+                  exclude_fs_types: { fs_types: [autofs, binfmt_misc, bpf, cgroup2, configfs, debugfs, devpts, devtmpfs, fusectl, hugetlbfs, iso9660, mqueue, nsfs, overlay, proc, procfs, pstore, rpc_pipefs, securityfs, selinuxfs, squashfs, sysfs, tracefs], match_type: strict }
+                  exclude_mount_points: { match_type: regexp, mount_points: [/dev/*, /proc/*, /sys/*, /run/k3s/containerd/*, /run/containerd/runc/*, /var/lib/docker/*, /var/lib/kubelet/*, /snap/*] }
+                memory: { metrics: { system.memory.utilization: { enabled: true } } }
+                network:
+                process:
+                  metrics:
+                    process.cpu.utilization: { enabled: true }
+                    process.memory.utilization: { enabled: true }
+                    process.threads: { enabled: true }
+                  mute_process_exe_error: true
+                  mute_process_user_error: true
+          connectors:
+            forward/sampled: {}
+            spanmetrics:
+              namespace: ""
+              histogram:
+                explicit:
+                  buckets: [100us, 1ms, 2ms, 4ms, 6ms, 10ms, 100ms, 250ms]
+              dimensions:
+                - name: http.method
+                - name: cgx.transaction
+                - name: cgx.transaction.root
+              exemplars:
+                enabled: true
+              aggregation_cardinality_limit: 1000
+              aggregation_temporality: "AGGREGATION_TEMPORALITY_CUMULATIVE"
+              metrics_flush_interval: 15s
+              events:
+                enabled: true
+                dimensions:
+                  - name: exception.type
+                  - name: exception.message
+          processors:
+            batch: { send_batch_max_size: 2048, send_batch_size: 1024, timeout: 1s }
+            resourcedetection:
+              detectors: [system, env, ec2]
+              override: false
+              timeout: 2s
+            resource/metadata:
+              attributes:
+                - action: upsert
+                  key: cx.otel_integration.name
+                  value: coralogix-integration-OTEL-EC2-service
+            resourcedetection/entity:
+              detectors: [system, env, ec2, ecs]
+              override: false
+              timeout: 2s
+              system:
+                resource_attributes:
+                  host.id: { enabled: false }
+                  host.cpu.cache.l2.size: { enabled: true }
+                  host.cpu.stepping: { enabled: true }
+                  host.cpu.model.name: { enabled: true }
+                  host.cpu.model.id: { enabled: true }
+                  host.cpu.family: { enabled: true }
+                  host.cpu.vendor.id: { enabled: true }
+                  host.mac: { enabled: true }
+                  host.ip: { enabled: true }
+                  os.description: { enabled: true }
+            transform/entity-event:
+              error_mode: silent
+              log_statements:
+                - context: log
+                  statements:
+                    - set(attributes["otel.entity.id"]["host.id"], resource.attributes["host.id"])
+                    - merge_maps(attributes, resource.attributes, "insert")
+                - context: resource
+                  statements:
+                    - keep_keys(attributes, [""])
+          exporters:
+            coralogix:
+              domain: ${!env:CORALOGIX_DOMAIN}
+              private_key: ${!env:CORALOGIX_PRIVATE_KEY}
+              application_name: ${!env:CORALOGIX_APP}
+              subsystem_name: ${!env:CORALOGIX_SUBSYSTEM}
+              timeout: 30s
+            coralogix/resource_catalog:
+              application_name: resource
+              domain: ${!env:CORALOGIX_DOMAIN}
+              private_key: ${!env:CORALOGIX_PRIVATE_KEY}
+              logs:
+                headers:
+                  X-Coralogix-Distribution: ec2-local-integration/0.0.1
+                  x-coralogix-ingress: metadata-as-otlp-logs/v1
+              subsystem_name: catalog
+              timeout: 30s
+          # extensions:
+          #   file_storage: { directory: /var/log/otelcol }
+          service:
+            # extensions: [file_storage]
+            pipelines:
+              logs:
+                receivers: [filelog]
+                processors: [resourcedetection, batch]
+                exporters: [coralogix]
+              metrics:
+                receivers: [hostmetrics, otlp, spanmetrics]
+                processors: [resourcedetection, batch]
+                exporters: [coralogix]
+              traces:
+                receivers: [otlp]
+                processors: [resourcedetection, batch]
+                exporters: [coralogix, spanmetrics]
+              logs/resource_catalog:
+                exporters: [coralogix/resource_catalog]
+                processors: [resource/metadata, resourcedetection/entity, transform/entity-event]
+                receivers: [hostmetrics]
+          EOF
+
+          systemctl enable otelcol-contrib
+          systemctl restart otelcol-contrib || true
+          systemctl status --no-pager otelcol-contrib || true
+          echo "================ OTEL INSTALL COMPLETE ================"
+          journalctl -u otelcol-contrib -n 50 --no-pager || true
+          echo "================ END ================"
+
+          #setting up the sample Application
+           git clone https://github.com/cxthulasi/cx-tracing.git &&
+           cd cx-tracing &&
+           npm install &&
+           npm start
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags: [{ Key: Name, Value: otel-ec2-role }]
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref InstanceRole]
+      InstanceProfileName: !Sub "${AWS::StackName}-instance-profile"
+
+Outputs:
+  InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref EC2Instance
+  PublicIP:
+    Description: Public IP address
+    Value: !GetAtt EC2Instance.PublicIp
+  PublicDNS:
+    Description: Public DNS name
+    Value: !GetAtt EC2Instance.PublicDnsName
+  HttpURL:
+    Description: Convenience URL (HTTP) to the instance (if you later run a web server)
+    Value: !Sub "http://${EC2Instance.PublicDnsName}"
+  SessionManagerCommand:
+    Description: Use this to connect via AWS CLI v2 (requires proper IAM user/role locally)
+    Value: !Sub "aws ssm start-session --target ${EC2Instance}"
