@@ -23,7 +23,12 @@ The application consists of three services:
 
 ### Option 1: Docker Compose (Recommended)
 
-1. **Test the application:**
+1. **Start all services:**
+   ```bash
+   docker-compose up --build
+   ```
+
+2. **Test the application:**
    ```bash
    # Generate traces with different outcomes
    curl http://localhost:3000/api/users
@@ -31,8 +36,17 @@ The application consists of three services:
    curl http://localhost:3002/api/settings
    ```
 
-3. **View traces in Jaeger UI:**
-   Open http://localhost:16686
+
+4. **View logs:**
+   ```bash
+   # Service-specific logs are stored in separate directories
+   tail -f logs/service-a/combined.log
+   tail -f logs/service-b/combined.log
+   tail -f logs/service-c/combined.log
+
+   # Error logs only
+   tail -f logs/service-a/error.log
+   ```
 
 ### Option 2: Local Development
 
@@ -41,8 +55,15 @@ The application consists of three services:
    npm install
    ```
 
+2. **Start OTEL Collector:**
+   ```bash
+   docker run -p 4317:4317 -p 4318:4318 \
+     -v $(pwd)/otel-collector-config.yaml:/etc/otel-collector-config.yaml \
+     otel/opentelemetry-collector-contrib:latest \
+     --config=/etc/otel-collector-config.yaml
+   ```
 
-2. **Start services in separate terminals using .env files:**
+3. **Start services in separate terminals using .env files:**
    ```bash
    # Terminal 1 - Service A
    npx dotenv -e .env.service-a npm start
@@ -103,9 +124,22 @@ The application uses `.env` files for configuration:
 - `GET /api/settings` - Get user settings
 - `GET /health` - Health check
 
-## Trace and Log Correlation
+## Logging Configuration
 
-Each log entry includes:
+The application uses Winston for structured logging with the following features:
+
+### Log Files
+- **`logs/combined.log`**: All log levels (info, warn, error)
+- **`logs/error.log`**: Error logs only
+- **Log Rotation**: 5MB max file size, keeps 5 files
+- **Console Output**: Logs also appear in console/stdout
+
+### Log Locations
+- **Docker**: Logs are mounted to `./logs/service-{a,b,c}/` on the host
+- **Local Development**: Logs are written to `./logs/` directory
+
+### Log Format
+Each log entry includes trace correlation:
 ```json
 {
   "timestamp": "2024-01-15T10:30:00.123Z",
@@ -115,6 +149,18 @@ Each log entry includes:
   "trace_id": "1234567890abcdef1234567890abcdef",
   "span_id": "1234567890abcdef"
 }
+```
+
+### Viewing Logs
+```bash
+# Real-time log monitoring
+tail -f logs/service-a/combined.log
+
+# Error logs only
+tail -f logs/service-a/error.log
+
+# All services combined (if running locally)
+tail -f logs/combined.log
 ```
 
 ## Testing Different Scenarios

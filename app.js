@@ -27,6 +27,14 @@ sdk.start();
 const express = require('express');
 const axios = require('axios');
 const winston = require('winston');
+const fs = require('fs');
+const path = require('path');
+
+// Ensure logs directory exists
+const logsDir = path.join(__dirname, 'logs');
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
 
 // Custom JSON formatter with trace correlation
 const jsonFormatter = winston.format.combine(
@@ -50,10 +58,23 @@ const jsonFormatter = winston.format.combine(
 
 // Configure logger
 const logger = winston.createLogger({
-  level: 'info',
+  level: process.env.LOG_LEVEL || 'info',
   format: jsonFormatter,
   transports: [
-    new winston.transports.Console()
+    new winston.transports.Console(),
+    new winston.transports.File({
+      filename: 'logs/error.log',
+      level: 'error',
+      maxsize: 5242880, // 5MB
+      maxFiles: 5,
+      tailable: true
+    }),
+    new winston.transports.File({
+      filename: 'logs/combined.log',
+      maxsize: 5242880, // 5MB
+      maxFiles: 5,
+      tailable: true
+    })
   ]
 });
 
@@ -252,12 +273,39 @@ if (serviceName === 'service-a') {
 }
 
 app.listen(port, () => {
-  logger.info(`${serviceName} started on port ${port}`);
+  logger.info(`${serviceName} started on port ${port}`, {
+    service: serviceName,
+    port: port,
+    environment: process.env.NODE_ENV || 'production',
+    pid: process.pid
+  });
+});
+
+// Log unhandled errors
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', { error: error.message, stack: error.stack });
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection at:', { promise, reason });
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  logger.info('SIGTERM received, shutting down gracefully');
+  logger.info('SIGTERM received, shutting down gracefully', {
+    service: serviceName,
+    pid: process.pid
+  });
+  sdk.shutdown();
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  logger.info('SIGINT received, shutting down gracefully', {
+    service: serviceName,
+    pid: process.pid
+  });
   sdk.shutdown();
   process.exit(0);
 });

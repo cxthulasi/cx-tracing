@@ -28,6 +28,8 @@ services:
     build: .
     ports:
       - "${SERVICE_A_PORT:-3000}:${SERVICE_A_PORT:-3000}"
+    volumes:
+      - ./logs/service-a:/app/logs
     env_file:
       - .env
     environment:
@@ -44,6 +46,8 @@ services:
     build: .
     ports:
       - "${SERVICE_B_PORT:-3001}:${SERVICE_B_PORT:-3001}"
+    volumes:
+      - ./logs/service-b:/app/logs
     env_file:
       - .env
     environment:
@@ -59,6 +63,8 @@ services:
     build: .
     ports:
       - "${SERVICE_C_PORT:-3002}:${SERVICE_C_PORT:-3002}"
+    volumes:
+      - ./logs/service-c:/app/logs
     env_file:
       - .env
     environment:
